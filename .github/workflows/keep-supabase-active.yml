@@ -3,7 +3,8 @@ name: Keep Multiple Supabase Projects Active
 on:
   schedule:
     - cron: '0 5 * * *' #
-
+  # 也可以手动触发
+  workflow_dispatch:
 jobs:
   keep-active:
     runs-on: ubuntu-latest
