@@ -1,0 +1,34 @@
+name: Supabase Projects Keep Alive (Matrix)
+
+on:
+  schedule:
+    - cron: '0 5 * * *'
+
+jobs:
+  keep-alive:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        project:
+          - name: Project_A
+            url_secret: PROJECT_A_SUPABASE_URL
+            key_secret: PROJECT_A_SUPABASE_ANON_KEY
+            table: table_in_project_a
+          - name: Project_B
+            url_secret: PROJECT_B_SUPABASE_URL
+            key_secret: PROJECT_B_SUPABASE_ANON_KEY
+            table: table_in_project_b
+          # 如果有更多项目，在这里添加新的对象
+          # - name: Project_C
+          #   url_secret: PROJECT_C_SUPABASE_URL
+          #   key_secret: PROJECT_C_SUPABASE_ANON_KEY
+          #   table: table_in_project_c
+
+    steps:
+      - name: Call API for ${{ matrix.project.name }}
+        run: |
+          # 注意这里的语法，我们动态地从 secrets 中获取值
+          curl -X GET \
+            "${{ secrets[matrix.project.url_secret] }}/rest/v1/${{ matrix.project.table }}?select=id&limit=1" \
+            -H "apikey: ${{ secrets[matrix.project.key_secret] }}" \
+            -H "Authorization: Bearer ${{ secrets[matrix.project.key_secret] }}"
