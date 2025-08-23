@@ -1,36 +1,87 @@
-name: Supabase Projects Keep Alive (Matrix)
+name: Supabase Projects Keepalive
 
 on:
-  # 添加了手动触发器，现在你可以测试了！
-  workflow_dispatch: {}
+  # 每7天执行一次
   schedule:
-    - cron: '0 5 * * *'
+    - cron: '0 0 */7 * *'
+  
+  # 手动触发工作流
+  workflow_dispatch:
 
 jobs:
-  keep-alive:
+  keepalive:
     runs-on: ubuntu-latest
     strategy:
-      # 失败一个 job 不会影响其他 job
-      fail-fast: false
       matrix:
         project:
-          - name: n8npro
-            # 修正！这里应该是 Secrets 的名称，而不是实际的值
-            url_secret: N8NPRO_SUPABASE_URL
-            key_secret: N8NPRO_SUPABASE_ANON_KEY
-            table: user # 请确认 'user' 表存在于你的 n8npro 项目中
-
-          # 如果 Project_B 是一个真实项目，请像上面一样配置它
-          # - name: Project_B
-          #   url_secret: PROJECT_B_SUPABASE_URL
-          #   key_secret: PROJECT_B_SUPABASE_ANON_KEY
-          #   table: table_in_project_b
-
+          - name: "Project1"
+            url: "${{ secrets.SUPABASE_PROJECT1_URL }}"
+            service_role_key: "${{ secrets.SUPABASE_PROJECT1_SERVICE_ROLE }}"
+          - name: "Project2"
+            url: "${{ secrets.SUPABASE_PROJECT2_URL }}"
+            service_role_key: "${{ secrets.SUPABASE_PROJECT2_SERVICE_ROLE }}"
+          # 可以继续添加更多项目
+    
     steps:
-      - name: Call API for ${{ matrix.project.name }}
-        run: |
-          # 这部分逻辑是正确的，它会使用 matrix 中定义的变量名去 secrets 中查找对应的值
-          curl -I -X GET \
-            "${{ secrets[matrix.project.url_secret] }}/rest/v1/${{ matrix.project.table }}?select=id&limit=1" \
-            -H "apikey: ${{ secrets[matrix.project.key_secret] }}" \
-            -H "Authorization: Bearer ${{ secrets[matrix.project.key_secret] }}"
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Install Supabase CLI
+      run: |
+        curl -sL https://supabase.com/docs/guides/cli/getting-started | bash
+        supabase --version
+
+    - name: Keepalive Project ${{ matrix.project.name }}
+      env:
+        SUPABASE_URL: ${{ matrix.project.url }}
+        SUPABASE_SERVICE_ROLE_KEY: ${{ matrix.project.service_role_key }}
+      run: |
+        # 方法1：直接执行查询
+        supabase sql \
+          -P "SELECT NOW() AS keepalive_timestamp;" \
+          --command
+
+        # 方法2：创建一个简单的测试表
+        supabase sql << EOF
+        CREATE TABLE IF NOT EXISTS keepalive_log (
+          id SERIAL PRIMARY KEY,
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        );
+
+        INSERT INTO keepalive_log DEFAULT VALUES;
+        EOF
+
+    - name: Send Status Notification
+      if: always()
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{secrets.GITHUB_TOKEN}}
+        script: |
+          const status = '${{ job.status }}'
+          const projectName = '${{ matrix.project.name }}'
+          
+          if (status === 'success') {
+            console.log(`✅ Keepalive successful for ${projectName}`)
+          } else {
+            console.log(`❌ Keepalive failed for ${projectName}`)
+          }
+
+  notify:
+    needs: [keepalive]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Slack/Discord Notification
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ needs.keepalive.result }}
+          text: |
+            Supabase Projects Keepalive Status
+            Project(s) Checked
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }} # 可选的通知渠道
