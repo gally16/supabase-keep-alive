@@ -10,10 +10,10 @@ jobs:
     strategy:
       matrix:
         project:
-          - name: Project_A
-            url_secret: PROJECT_A_SUPABASE_URL
-            key_secret: PROJECT_A_SUPABASE_ANON_KEY
-            table: table_in_project_a
+          - name: n8npro
+            url_secret: https://eyxkflyoucpcqwvjbhny.supabase.co
+            key_secret: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV5eGtmbHlvdWNwY3F3dmpiaG55Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTI5MDY2ODIsImV4cCI6MjA2ODQ4MjY4Mn0.3AGz4cjAUtHZGp_E1VGxaD7mP4ave15tKIfRcO2gucs
+            table: user
           - name: Project_B
             url_secret: PROJECT_B_SUPABASE_URL
             key_secret: PROJECT_B_SUPABASE_ANON_KEY
