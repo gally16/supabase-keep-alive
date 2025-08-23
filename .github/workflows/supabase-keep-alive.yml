@@ -1,10 +1,8 @@
 name: Supabase Keep-Alive
 
 on:
-  workflow_dispatch: # 允许手动触发
+  workflow_dispatch:
   schedule:
-    # Cron 表达式，表示在每周一和周四的 UTC 时间 5:30 运行
-    # 你可以根据需要修改，但一周 1-2 次足矣
     - cron: '30 5 * * 1,4'
 
 jobs:
@@ -12,8 +10,9 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        # 在这里定义你的所有项目，这里的名字需要和你设置的 Secrets 后缀对应
-        project: ['PROJ1', 'PROJ2', 'BLOG']
+        # ⚠️ 关键点：请确保这里的 'PROJ1', 'PROJ2' 等名字
+        # 和你 GitHub Secrets 名称的后缀（如 SUPABASE_URL_PROJ1）完全一致！
+        project: ['PROJ1', 'PROJ2'] # <-- 根据你的项目修改这里
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -21,14 +20,14 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: '18'
+          # ✅ 已更新为 Supabase 推荐的 Node.js 版本
+          node-version: '20'
 
       - name: Install Supabase client
         run: npm install @supabase/supabase-js
 
       - name: Run Supabase Keep-Alive Script for ${{ matrix.project }}
         env:
-          # 动态地从 Secrets 中读取 URL 和 KEY
           SUPABASE_URL: ${{ secrets[format('SUPABASE_URL_{0}', matrix.project)] }}
           SUPABASE_KEY: ${{ secrets[format('SUPABASE_KEY_{0}', matrix.project)] }}
         run: |
@@ -38,7 +37,7 @@ jobs:
             const supabaseKey = process.env.SUPABASE_KEY;
 
             if (!supabaseUrl || !supabaseKey) {
-              console.error('Supabase URL or Key is missing.');
+              console.error('Supabase URL or Key is missing. Please check your GitHub repository secrets.');
               process.exit(1);
             }
 
@@ -47,16 +46,13 @@ jobs:
             const supabase = createClient(supabaseUrl, supabaseKey);
 
             async function keepAlive() {
-              // 执行一个非常轻量的查询，只查询元数据，不返回任何行
-              // 这里的 'your_table_name' 需要换成你项目中实际存在的一个表名
-              // 如果你不确定，可以查询 pg_catalog.pg_database，这是一个系统表，永远存在
               const { error, count } = await supabase.from('pg_catalog.pg_database').select('*', { count: 'exact', head: true });
               
               if (error) {
                 console.error('Error pinging Supabase:', error.message);
                 process.exit(1);
               } else {
-                console.log('Successfully pinged project. DB count:', count);
+                console.log('Successfully pinged project. DB count (from pg_database):', count);
               }
             }
 
