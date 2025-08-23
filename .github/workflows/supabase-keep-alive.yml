@@ -1,6 +1,8 @@
 name: Supabase Projects Keep Alive (Matrix)
 
 on:
+  # 添加了手动触发器，现在你可以测试了！
+  workflow_dispatch: {}
   schedule:
     - cron: '0 5 * * *'
 
@@ -8,27 +10,27 @@ jobs:
   keep-alive:
     runs-on: ubuntu-latest
     strategy:
+      # 失败一个 job 不会影响其他 job
+      fail-fast: false
       matrix:
         project:
           - name: n8npro
-            url_secret: https://eyxkflyoucpcqwvjbhny.supabase.co
-            key_secret: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV5eGtmbHlvdWNwY3F3dmpiaG55Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTI5MDY2ODIsImV4cCI6MjA2ODQ4MjY4Mn0.3AGz4cjAUtHZGp_E1VGxaD7mP4ave15tKIfRcO2gucs
-            table: user
-          - name: Project_B
-            url_secret: PROJECT_B_SUPABASE_URL
-            key_secret: PROJECT_B_SUPABASE_ANON_KEY
-            table: table_in_project_b
-          # 如果有更多项目，在这里添加新的对象
-          # - name: Project_C
-          #   url_secret: PROJECT_C_SUPABASE_URL
-          #   key_secret: PROJECT_C_SUPABASE_ANON_KEY
-          #   table: table_in_project_c
+            # 修正！这里应该是 Secrets 的名称，而不是实际的值
+            url_secret: N8NPRO_SUPABASE_URL
+            key_secret: N8NPRO_SUPABASE_ANON_KEY
+            table: user # 请确认 'user' 表存在于你的 n8npro 项目中
+
+          # 如果 Project_B 是一个真实项目，请像上面一样配置它
+          # - name: Project_B
+          #   url_secret: PROJECT_B_SUPABASE_URL
+          #   key_secret: PROJECT_B_SUPABASE_ANON_KEY
+          #   table: table_in_project_b
 
     steps:
       - name: Call API for ${{ matrix.project.name }}
         run: |
-          # 注意这里的语法，我们动态地从 secrets 中获取值
-          curl -X GET \
+          # 这部分逻辑是正确的，它会使用 matrix 中定义的变量名去 secrets 中查找对应的值
+          curl -I -X GET \
             "${{ secrets[matrix.project.url_secret] }}/rest/v1/${{ matrix.project.table }}?select=id&limit=1" \
             -H "apikey: ${{ secrets[matrix.project.key_secret] }}" \
             -H "Authorization: Bearer ${{ secrets[matrix.project.key_secret] }}"
