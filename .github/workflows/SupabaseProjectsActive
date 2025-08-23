@@ -1,0 +1,27 @@
+name: Keep Multiple Supabase Projects Active
+
+on:
+  schedule:
+    - cron: '*/30 * * * *' # 每30分钟
+
+jobs:
+  keep-active:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🌐 Ping Project 1
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL_1 }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY_1 }}
+        run: curl -X GET "$SUPABASE_URL/rest/v1/" -H "apikey: $SUPABASE_KEY" -H "Authorization: Bearer $SUPABASE_KEY"
+      
+      - name: 🌐 Ping Project 2
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL_2 }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY_2 }}
+        run: curl -X GET "$SUPABASE_URL/rest/v1/" -H "apikey: $SUPABASE_KEY" -H "Authorization: Bearer $SUPABASE_KEY"
+      
+      - name: 🌐 Ping Project 3
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL_3 }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY_3 }}
+        run: curl -X GET "$SUPABASE_URL/rest/v1/" -H "apikey: $SUPABASE_KEY" -H "Authorization: Bearer $SUPABASE_KEY"
