@@ -1,9 +1,14 @@
+# .github/workflows/keep-supabase-active.yml
+
 name: Keep Multiple Supabase Projects Active
 
-on:
+于:
+  # 每天 UTC 时间早上 5 点运行
   schedule:
-    - cron: '0 5 * * *'  # 每天早上5点(UTC时间)执行
-  workflow_dispatch:  # 注意：与schedule同级，不是缩进在schedule下面
+    - cron: '0 5 * * *'
+  
+  # 允许在 GitHub Actions 页面手动触发
+  workflow_dispatch:
 
 jobs:
   keep-active:
@@ -13,16 +18,28 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL_1 }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY_1 }}
-        run: curl -X GET "$SUPABASE_URL/rest/v1/" -H "apikey: $SUPABASE_KEY" -H "Authorization: Bearer $SUPABASE_KEY"
-      
+        run: |
+          echo "Pinging ${{ env.SUPABASE_URL }}"
+          curl -s -f -X GET "$SUPABASE_URL/rest/v1/" \
+            -H "apikey: $SUPABASE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_KEY" || exit 1
+
       - name: 🌐 Ping Project 2
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL_2 }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY_2 }}
-        run: curl -X GET "$SUPABASE_URL/rest/v1/" -H "apikey: $SUPABASE_KEY" -H "Authorization: Bearer $SUPABASE_KEY"
-      
+        run: |
+          echo "Pinging ${{ env.SUPABASE_URL }}"
+          curl -s -f -X GET "$SUPABASE_URL/rest/v1/" \
+            -H "apikey: $SUPABASE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_KEY" || exit 1
+
       - name: 🌐 Ping Project 3
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL_3 }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY_3 }}
-        run: curl -X GET "$SUPABASE_URL/rest/v1/" -H "apikey: $SUPABASE_KEY" -H "Authorization: Bearer $SUPABASE_KEY"
+        run: |
+          echo "Pinging ${{ env.SUPABASE_URL }}"
+          curl -s -f -X GET "$SUPABASE_URL/rest/v1/" \
+            -H "apikey: $SUPABASE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_KEY" || exit 1
