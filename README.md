@@ -1,4 +1,4 @@
-# github action版：Supabase Keep-Alive Bot
+# Github action版：Supabase Keep-Alive Bot
 
 这是一个使用 [GitHub Actions](https://github.com/features/actions) 自动为多个 Supabase 项目“保活”的自动化脚本。
 
