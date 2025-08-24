@@ -40,7 +40,8 @@
     -   `SUPABASE_KEY_PROJ1`
 
     `<YOUR_PROJECT_NAME>` 部分可以是任何你喜欢的标识符（建议大写），只要在下一步中保持一致即可。
-
+    "SUPABASE_URL_PROJ1": "https://your-project.supabase.co",
+    https://supabase.com/dashboard/project/qfhifzyleqadysyjrvxi/settings/api-keys网址中：的"qfhifzyleqadysyjrvxi"
 ### 步骤 3: 配置 Workflow 文件
 
 本项目已经包含一个 workflow 配置文件：`.github/workflows/supabase-keep-alive.yml`。
@@ -57,6 +58,8 @@
         # 这里的名字需要和你设置的 Secrets 后缀完全对应
         project: ['PROJ1', 'BLOG'] # <-- 修改这里
 # ... (其他部分) ...
+```
+
 
 
 # vercel版：Supabase Keep Alive
