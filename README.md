@@ -1,3 +1,35 @@
+# Uptime Kuma版：
+或其他第三方：https://betterstack.com/uptime
+
+类型: HTTP (S)
+URL: https://[您的项目].supabase.co/rest/v1/
+请求方法: GET
+
+请求头配置
+
+{
+"apikey": "Supabase-Anon-Key"
+}
+
+Supabase-Anon-Key 获取方法
+Legacy anon, service_role API keys→Anon-Key
+
+"https://your-project.supabase.co",
+    "your-project"：https://supabase.com/dashboard/project/qfhifzy****/settings/api-keys 网址中的"qfhifzy****"
+问题：
+2．保活机制分析
+·仅获取API文档可能不足以触发Supabase的活跃度计算。真正有效的保活需要执行实际的数据库查询操作
+。日志中的origin_time:647表明请求确实到达了服务器，但可能未触发核心数据库活动[[3]]
+三、优化建议
+1.修改保活请求配置
+。将目标URL从 /rest/v1/改为实际的数据库查询:
+<TEXT>
+/rest/v1/your_table?select=count&limit=1
+
+
+
+
+
 # Github action版：Supabase Keep-Alive Bot
 
 这是一个使用 [GitHub Actions](https://github.com/features/actions) 自动为多个 Supabase 项目“保活”的自动化脚本。
