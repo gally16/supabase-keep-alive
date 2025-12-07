@@ -11,11 +11,14 @@ URL: https://[您的项目].supabase.co/rest/v1/
 "apikey": "Supabase-Anon-Key"
 }
 
-Supabase-Anon-Key 获取方法
+Supabase-Anon-Key 获取方法：
+
 Legacy anon, service_role API keys→Anon-Key
 
 "https://your-project.supabase.co",
     "your-project"：https://supabase.com/dashboard/project/qfhifzy****/settings/api-keys 网址中的"qfhifzy****"
+
+
 问题：
 2．保活机制分析
 ·仅获取API文档可能不足以触发Supabase的活跃度计算。真正有效的保活需要执行实际的数据库查询操作
