@@ -36,26 +36,52 @@ jobs:
         run: |
           node -e "
             const { createClient } = require('@supabase/supabase-js');
-            const supabaseUrl = process.env.SUPABASE_URL;
-            const supabaseKey = process.env.SUPABASE_KEY;
+            
+            // 🔴 优化1：自动去除 URL 和 Key 里的空格/换行符，防止复制粘贴错误
+            const supabaseUrl = (process.env.SUPABASE_URL || '').trim();
+            const supabaseKey = (process.env.SUPABASE_KEY || '').trim();
 
             if (!supabaseUrl || !supabaseKey) {
-              console.error('Supabase URL or Key is missing. Please check your GitHub repository secrets.');
+              console.error('❌ Missing URL or Key. Please check GitHub Secrets.');
               process.exit(1);
             }
 
-            console.log('Pinging project at:', supabaseUrl.substring(0, 25) + '...');
+            console.log('📡 Pinging project at:', supabaseUrl);
 
-            const supabase = createClient(supabaseUrl, supabaseKey);
+            // 🔴 优化2：关闭 auth持久化，加快连接速度
+            const supabase = createClient(supabaseUrl, supabaseKey, {
+              auth: { persistSession: false }
+            });
 
             async function keepAlive() {
-              const { error, count } = await supabase.from('pg_catalog.pg_database').select('*', { count: 'exact', head: true });
-              
-              if (error) {
-                console.error('Error pinging Supabase:', error.message);
+              try {
+                console.log('🚀 Sending request to wake up DB...');
+
+                // 🔴 优化3：不再查询 pg_catalog（可能被禁），改查询一个不存在的表
+                // 只要数据库返回了信息（哪怕是报错说表不存在），就说明它活过来了
+                const { data, error } = await supabase
+                  .from('__keep_alive_trigger__')
+                  .select('id')
+                  .limit(1);
+
+                // 检查错误类型
+                if (error) {
+                  // 如果错误包含 'fetch failed'，说明网络不通或项目被暂停了 -> 报错退出
+                  if (error.message && (error.message.includes('fetch failed') || error.message.includes('connection refused'))) {
+                    throw new Error(error.message); 
+                  }
+                  // 如果是其他错误（比如 relation does not exist），说明数据库连上了 -> 算成功
+                  console.log('✅ Project is alive! (DB responded: ' + error.message + ')');
+                } else {
+                  console.log('✅ Project is alive! (Query successful)');
+                }
+
+              } catch (err) {
+                console.error('❌ Error pinging Supabase:', err.message);
+                console.error('⚠️ 如果错误是 fetch failed，请检查：');
+                console.error('   1. Supabase 后台是否显示项目已 Paused（如果是，请手动恢复）');
+                console.error('   2. GitHub Secret 中的 URL 是否正确');
                 process.exit(1);
-              } else {
-                console.log('Successfully pinged project. DB count (from pg_database):', count);
               }
             }
 
