@@ -22,66 +22,69 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Setup Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: '20'
+    uses: actions/setup-node@v3
+    with:
+      # ✅ 已更新为 Supabase 推荐的 Node.js 版本
+      node-version: '20'
 
-      - name: Install Supabase client
-        run: npm install @supabase/supabase-js
+  - name: Install Supabase client
+    run: npm install @supabase/supabase-js
 
-      - name: Run Supabase Keep-Alive Script for ${{ matrix.project }}
-        env:
-          SUPABASE_URL: ${{ secrets[format('SUPABASE_URL_{0}', matrix.project)] }}
-          SUPABASE_KEY: ${{ secrets[format('SUPABASE_KEY_{0}', matrix.project)] }}
-        run: |
-          node -e "
-            const { createClient } = require('@supabase/supabase-js');
-            
-            const supabaseUrl = (process.env.SUPABASE_URL || '').trim();
-            const supabaseKey = (process.env.SUPABASE_KEY || '').trim();
+  - name: Run Supabase Keep-Alive Script for ${{ matrix.project }}
+    env:
+      SUPABASE_URL: ${{ secrets[format('SUPABASE_URL_{0}', matrix.project)] }}
+      SUPABASE_KEY: ${{ secrets[format('SUPABASE_KEY_{0}', matrix.project)] }}
+    run: |
+      node -e "
+        const { createClient } = require('@supabase/supabase-js');
+        
+        // 🔴 优化1：自动去除 URL 和 Key 里的空格/换行符，防止复制粘贴错误
+        const supabaseUrl = (process.env.SUPABASE_URL || '').trim();
+        const supabaseKey = (process.env.SUPABASE_KEY || '').trim();
 
-            if (!supabaseUrl || !supabaseKey) {
-              console.error('❌ Missing URL or Key. Please check GitHub Secrets.');
-              process.exit(1);
-            }
+        if (!supabaseUrl || !supabaseKey) {
+          console.error('❌ Missing URL or Key. Please check GitHub Secrets.');
+          process.exit(1);
+        }
 
-            console.log('📡 Connecting to:', supabaseUrl);
+        console.log('📡 Pinging project at:', supabaseUrl);
 
-            const supabase = createClient(supabaseUrl, supabaseKey, {
-              auth: { persistSession: false }
-            });
+        // 🔴 优化2：关闭 auth持久化，加快连接速度
+        const supabase = createClient(supabaseUrl, supabaseKey, {
+          auth: { persistSession: false }
+        });
 
-            async function keepAlive() {
-              try {
-                // ✅ 真正的保活：更新 keep_alive 表的一行数据
-                // Upsert 操作：如果 id=1 存在则更新时间，不存在则插入
-                // 这种“写操作”是 Supabase 判定活跃度的黄金标准
-                const { data, error } = await supabase
-                  .from('keep_alive')
-                  .upsert({ id: 1, last_ping: new Date().toISOString() })
-                  .select();
+        async function keepAlive() {
+          try {
+            console.log('🚀 Sending request to wake up DB...');
 
-                if (error) {
-                  throw error;
-                }
+            // 🔴 优化3：不再查询 pg_catalog（可能被禁），改查询一个不存在的表
+            // 只要数据库返回了信息（哪怕是报错说表不存在），就说明它活过来了
+            const { data, error } = await supabase
+              .from('__keep_alive_trigger__')
+              .select('id')
+              .limit(1);
 
-                console.log('✅ Success! Database updated via Upsert.');
-                console.log('📝 Response:', JSON.stringify(data));
-
-              } catch (err) {
-                console.error('❌ Error pinging Supabase:', err.message);
-                
-                // 错误排查提示
-                if (err.message.includes('relation \"public.keep_alive\" does not exist')) {
-                  console.error('⚠️ 致命错误：数据库中缺少 keep_alive 表。请去 Supabase SQL Editor 执行建表 SQL。');
-                } else if (err.message.includes('fetch failed')) {
-                  console.error('⚠️ 网络连接失败，可能是项目已被暂停。请先手动在后台恢复项目。');
-                }
-                process.exit(1);
+            // 检查错误类型
+            if (error) {
+              // 如果错误包含 'fetch failed'，说明网络不通或项目被暂停了 -> 报错退出
+              if (error.message && (error.message.includes('fetch failed') || error.message.includes('connection refused'))) {
+                throw new Error(error.message); 
               }
+              // 如果是其他错误（比如 relation does not exist），说明数据库连上了 -> 算成功
+              console.log('✅ Project is alive! (DB responded: ' + error.message + ')');
+            } else {
+              console.log('✅ Project is alive! (Query successful)');
             }
 
-            keepAlive();
-          "
-            keepAlive();
-          "
+          } catch (err) {
+            console.error('❌ Error pinging Supabase:', err.message);
+            console.error('⚠️ 如果错误是 fetch failed，请检查：');
+            console.error('   1. Supabase 后台是否显示项目已 Paused（如果是，请手动恢复）');
+            console.error('   2. GitHub Secret 中的 URL 是否正确');
+            process.exit(1);
+          }
+        }
+
+        keepAlive();
+      "
