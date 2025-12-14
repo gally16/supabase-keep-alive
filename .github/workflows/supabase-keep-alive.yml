@@ -14,10 +14,10 @@ jobs:
         project: ['PROJ1', 'PROJ2', 'PROJ3', 'PROJ4']
 # ⚠️ 关键点：请确保这里的 'PROJ1', 'PROJ2' 等名字
         # 和你 GitHub Secrets 名称的后缀（如 SUPABASE_URL_PROJ1）完全一致！
-        #PROJ1：n8npro-475525068
-        #PROJ2：n8-151251860
-        #PROJ3：umi-151251860
-        #PROJ4：gally16@proton.me
+        #PROJ1：n8npro-4755
+        #PROJ2：n8-1512
+        #PROJ3：umi-1512
+        #PROJ4：@proton.me
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
