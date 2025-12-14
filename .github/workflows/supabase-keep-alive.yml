@@ -3,8 +3,7 @@ name: Supabase Keep-Alive (Smart Scan)
 on:
   workflow_dispatch:
   schedule:
-    # 每天北京时间早上 9:30 和 21:30 运行 (UTC 1:30, 13:30)
-    # 增加频率以防止 Supabase 在检测周期间隙暂停项目
+    # 每天运行两次 (UTC 01:30 和 13:30)，确保活跃度覆盖全天
     - cron: '30 1,13 * * *'
 
 jobs:
@@ -13,7 +12,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # ⚠️ 请确保这里也是你的项目代号，对应 Secrets: SUPABASE_URL_PROJ1 等
+        # ⚠️ 确保这里的名字与你 Secrets 的后缀一致 (SUPABASE_URL_PROJ1)
         project: ['PROJ1', 'PROJ2', 'PROJ3', 'PROJ4']
 # ⚠️ 关键点：请确保这里的 'PROJ1', 'PROJ2' 等名字
         # 和你 GitHub Secrets 名称的后缀（如 SUPABASE_URL_PROJ1）完全一致！
@@ -35,7 +34,6 @@ jobs:
 
       - name: Run Smart Keep-Alive for ${{ matrix.project }}
         env:
-          # 动态获取对应的 Secret
           SUPABASE_URL: ${{ secrets[format('SUPABASE_URL_{0}', matrix.project)] }}
           SUPABASE_KEY: ${{ secrets[format('SUPABASE_KEY_{0}', matrix.project)] }}
         run: |
@@ -47,31 +45,31 @@ jobs:
             const supabaseKey = (process.env.SUPABASE_KEY || '').trim();
 
             if (!supabaseUrl || !supabaseKey) {
-              console.error('❌ Missing URL or Key for this project. Check GitHub Secrets.');
+              console.error('❌ Missing URL or Key. Check GitHub Secrets.');
               process.exit(1);
             }
 
-            // 2. 初始化客户端 (关闭 auth 持久化以提高速度)
+            // 2. 初始化客户端
             const supabase = createClient(supabaseUrl, supabaseKey, {
               auth: { persistSession: false },
               db: { schema: 'public' }
             });
 
-            // 3. 定义扫描目标列表 (Storage + 20个常用表)
+            // 3. 定义扫描目标列表 
+            // 🌟 修改点：常用表在前，Storage在最后做保底
             const candidates = [
-              { type: 'storage', name: 'buckets' }, // 90% 的项目都有 Storage
-              { type: 'table', name: 'users' },
+              { type: 'table', name: 'users' },     // 最常见的表
               { type: 'table', name: 'profiles' },
               { type: 'table', name: 'todos' },
               { type: 'table', name: 'posts' },
               { type: 'table', name: 'projects' },
+              { type: 'table', name: 'settings' },
               { type: 'table', name: 'items' },
               { type: 'table', name: 'orders' },
               { type: 'table', name: 'products' },
+              { type: 'table', name: 'logs' },
               { type: 'table', name: 'comments' },
               { type: 'table', name: 'messages' },
-              { type: 'table', name: 'settings' },
-              { type: 'table', name: 'logs' },
               { type: 'table', name: 'events' },
               { type: 'table', name: 'tasks' },
               { type: 'table', name: 'notifications' },
@@ -79,12 +77,13 @@ jobs:
               { type: 'table', name: 'categories' },
               { type: 'table', name: 'teams' },
               { type: 'table', name: 'articles' },
-              { type: 'table', name: 'audit_logs' }
+              { type: 'table', name: 'audit_logs' },
+              { type: 'storage', name: 'buckets' }  // 🛡️ 保底：如果上面的表都没有，这行99%能成功
             ];
 
             async function scanAndWake() {
               console.log('📡 Connecting to:', supabaseUrl);
-              console.log('🔍 Starting scan of common tables to wake up DB...');
+              console.log('🔍 Starting scan...');
 
               for (const target of candidates) {
                 try {
@@ -92,11 +91,10 @@ jobs:
 
                   // --- 尝试探测 ---
                   if (target.type === 'storage') {
-                    // 尝试列出存储桶 (访问 storage schema)
                     const res = await supabase.storage.listBuckets();
                     error = res.error;
                   } else {
-                    // 尝试查询表的一行数据
+                    // 查询表的一行数据 (limit 1)
                     const res = await supabase.from(target.name).select('id').limit(1);
                     error = res.error;
                   }
@@ -112,9 +110,9 @@ jobs:
                   const msg = error.message.toLowerCase();
 
                   // 2. 权限不足 (Permission denied) -> 完美保活
-                  // 只要数据库返回权限错误，说明数据库进程是活的，并且找到了这张表
+                  // 只要数据库返回权限错误，说明表存在且数据库是活的
                   if (msg.includes('permission denied') || msg.includes('policy')) {
-                    console.log('✅ Alive! (Access Denied response confirms DB is up): ' + target.name);
+                    console.log('✅ Alive! (Access Denied confirms DB is up): ' + target.name);
                     return; // 结束整个脚本
                   }
 
@@ -134,16 +132,13 @@ jobs:
                   return;
 
                 } catch (err) {
-                  // 捕获上面的致命错误
                   console.error('❌ Critical Error:', err.message);
-                  console.error('💡 Action Required: Log in to Supabase and manually Restore the project if it is paused.');
                   process.exit(1);
                 }
               }
 
               // 循环走完都没 return，说明所有表都不存在
               console.error('❌ Scan failed! None of the 20 common tables exist.');
-              console.error('💡 Please manually create a dummy table named "users" or "todos" in your database.');
               process.exit(1);
             }
 
