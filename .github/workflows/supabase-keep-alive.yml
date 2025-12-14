@@ -3,7 +3,7 @@ name: Supabase Keep-Alive
 on:
   workflow_dispatch:
   schedule:
-    - cron: '30 5 * * 1,4'
+    - cron: '0 0 12 * * ?'
 
 jobs:
   keep-alive:
