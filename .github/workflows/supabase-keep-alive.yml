@@ -3,16 +3,16 @@ name: Supabase Keep-Alive
 on:
   workflow_dispatch:
   schedule:
-    - cron: '30 5 * * 1,2'
+    - cron: '0 0 20 1/1 * ?'
 
 jobs:
   keep-alive:
     runs-on: ubuntu-latest
     strategy:
       matrix:
+        project: ['PROJ1', 'PROJ2', 'PROJ3', 'PROJ4']
         # ⚠️ 关键点：请确保这里的 'PROJ1', 'PROJ2' 等名字
         # 和你 GitHub Secrets 名称的后缀（如 SUPABASE_URL_PROJ1）完全一致！
-        project: ['PROJ1', 'PROJ2', 'PROJ3', 'PROJ4'] # <-- 根据你的项目修改这里
         #PROJ1：n8npro-475525068
         #PROJ2：n8-151251860
         #PROJ3：umi-151251860
@@ -24,7 +24,6 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
-          # ✅ 已更新为 Supabase 推荐的 Node.js 版本
           node-version: '20'
 
       - name: Install Supabase client
@@ -38,7 +37,6 @@ jobs:
           node -e "
             const { createClient } = require('@supabase/supabase-js');
             
-            // 🔴 优化1：自动去除 URL 和 Key 里的空格/换行符，防止复制粘贴错误
             const supabaseUrl = (process.env.SUPABASE_URL || '').trim();
             const supabaseKey = (process.env.SUPABASE_KEY || '').trim();
 
@@ -47,44 +45,43 @@ jobs:
               process.exit(1);
             }
 
-            console.log('📡 Pinging project at:', supabaseUrl);
+            console.log('📡 Connecting to:', supabaseUrl);
 
-            // 🔴 优化2：关闭 auth持久化，加快连接速度
             const supabase = createClient(supabaseUrl, supabaseKey, {
               auth: { persistSession: false }
             });
 
             async function keepAlive() {
               try {
-                console.log('🚀 Sending request to wake up DB...');
-
-                // 🔴 优化3：不再查询 pg_catalog（可能被禁），改查询一个不存在的表
-                // 只要数据库返回了信息（哪怕是报错说表不存在），就说明它活过来了
+                // ✅ 真正的保活：更新 keep_alive 表的一行数据
+                // Upsert 操作：如果 id=1 存在则更新时间，不存在则插入
+                // 这种“写操作”是 Supabase 判定活跃度的黄金标准
                 const { data, error } = await supabase
-                  .from('__keep_alive_trigger__')
-                  .select('id')
-                  .limit(1);
+                  .from('keep_alive')
+                  .upsert({ id: 1, last_ping: new Date().toISOString() })
+                  .select();
 
-                // 检查错误类型
                 if (error) {
-                  // 如果错误包含 'fetch failed'，说明网络不通或项目被暂停了 -> 报错退出
-                  if (error.message && (error.message.includes('fetch failed') || error.message.includes('connection refused'))) {
-                    throw new Error(error.message); 
-                  }
-                  // 如果是其他错误（比如 relation does not exist），说明数据库连上了 -> 算成功
-                  console.log('✅ Project is alive! (DB responded: ' + error.message + ')');
-                } else {
-                  console.log('✅ Project is alive! (Query successful)');
+                  throw error;
                 }
+
+                console.log('✅ Success! Database updated via Upsert.');
+                console.log('📝 Response:', JSON.stringify(data));
 
               } catch (err) {
                 console.error('❌ Error pinging Supabase:', err.message);
-                console.error('⚠️ 如果错误是 fetch failed，请检查：');
-                console.error('   1. Supabase 后台是否显示项目已 Paused（如果是，请手动恢复）');
-                console.error('   2. GitHub Secret 中的 URL 是否正确');
+                
+                // 错误排查提示
+                if (err.message.includes('relation \"public.keep_alive\" does not exist')) {
+                  console.error('⚠️ 致命错误：数据库中缺少 keep_alive 表。请去 Supabase SQL Editor 执行建表 SQL。');
+                } else if (err.message.includes('fetch failed')) {
+                  console.error('⚠️ 网络连接失败，可能是项目已被暂停。请先手动在后台恢复项目。');
+                }
                 process.exit(1);
               }
             }
 
+            keepAlive();
+          "
             keepAlive();
           "
