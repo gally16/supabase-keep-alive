@@ -3,7 +3,6 @@ name: Supabase Keep-Alive (Smart Scan)
 on:
   workflow_dispatch:
   schedule:
-    # 每天运行两次 (UTC 01:30 和 13:30)，确保活跃度覆盖全天
     - cron: '30 1,13 * * *'
 
 jobs:
@@ -12,7 +11,6 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # ⚠️ 确保这里的名字与你 Secrets 的后缀一致 (SUPABASE_URL_PROJ1)
         project: ['PROJ1', 'PROJ2', 'PROJ3', 'PROJ4']
 # ⚠️ 关键点：请确保这里的 'PROJ1', 'PROJ2' 等名字
         # 和你 GitHub Secrets 名称的后缀（如 SUPABASE_URL_PROJ1）完全一致！
@@ -40,25 +38,22 @@ jobs:
           node -e "
             const { createClient } = require('@supabase/supabase-js');
             
-            // 1. 获取并清洗环境变量
             const supabaseUrl = (process.env.SUPABASE_URL || '').trim();
             const supabaseKey = (process.env.SUPABASE_KEY || '').trim();
 
             if (!supabaseUrl || !supabaseKey) {
-              console.error('❌ Missing URL or Key. Check GitHub Secrets.');
+              console.error('❌ Missing URL or Key.');
               process.exit(1);
             }
 
-            // 2. 初始化客户端
             const supabase = createClient(supabaseUrl, supabaseKey, {
               auth: { persistSession: false },
               db: { schema: 'public' }
             });
 
-            // 3. 定义扫描目标列表 
-            // 🌟 修改点：常用表在前，Storage在最后做保底
+            // 常用表在前，Storage 保底
             const candidates = [
-              { type: 'table', name: 'users' },     // 最常见的表
+              { type: 'table', name: 'users' },
               { type: 'table', name: 'profiles' },
               { type: 'table', name: 'todos' },
               { type: 'table', name: 'posts' },
@@ -78,7 +73,7 @@ jobs:
               { type: 'table', name: 'teams' },
               { type: 'table', name: 'articles' },
               { type: 'table', name: 'audit_logs' },
-              { type: 'storage', name: 'buckets' }  // 🛡️ 保底：如果上面的表都没有，这行99%能成功
+              { type: 'storage', name: 'buckets' } // 🛡️ 必须运行到这里才算最稳
             ];
 
             async function scanAndWake() {
@@ -89,45 +84,40 @@ jobs:
                 try {
                   let error = null;
 
-                  // --- 尝试探测 ---
                   if (target.type === 'storage') {
                     const res = await supabase.storage.listBuckets();
                     error = res.error;
                   } else {
-                    // 查询表的一行数据 (limit 1)
                     const res = await supabase.from(target.name).select('id').limit(1);
                     error = res.error;
                   }
 
-                  // --- 结果判定 ---
-                  
-                  // 1. 成功 (无错误) -> 完美保活
+                  // 1. 成功 (无错误) -> 绝对有效的活跃
                   if (!error) {
                     console.log('✅ Alive! Query successful on: [' + target.type + '] ' + target.name);
-                    return; // 结束整个脚本
+                    return; 
                   }
 
                   const msg = error.message.toLowerCase();
 
-                  // 2. 权限不足 (Permission denied) -> 完美保活
-                  // 只要数据库返回权限错误，说明表存在且数据库是活的
+                  // 2. 权限不足 -> 也是绝对有效的活跃（说明表存在且DB查了权限）
                   if (msg.includes('permission denied') || msg.includes('policy')) {
                     console.log('✅ Alive! (Access Denied confirms DB is up): ' + target.name);
-                    return; // 结束整个脚本
+                    return; 
                   }
 
-                  // 3. 表不存在 (Does not exist / 404) -> 继续尝试下一个
-                  if (msg.includes('does not exist') || msg.includes('404')) {
+                  // 3. 表不存在/Schema缓存错误 -> 继续尝试下一个
+                  // 🔴 修复点：加入了 schema cache 的判断，防止脚本提前退出
+                  if (msg.includes('does not exist') || msg.includes('404') || msg.includes('schema cache')) {
                     console.log('⚠️ Target not found: ' + target.name + ' -> trying next...');
                     continue; 
                   }
 
-                  // 4. 网络层致命错误 (Fetch failed) -> 项目可能已暂停
+                  // 4. 网络错误 -> 报错退出
                   if (msg.includes('fetch failed') || msg.includes('connection refused')) {
-                    throw new Error('FATAL: Connection failed. Is the project PAUSED? ' + msg);
+                    throw new Error('FATAL: Connection failed. ' + msg);
                   }
 
-                  // 5. 其他未知数据库错误 -> 说明连上了，算保活成功
                   console.log('✅ Alive! (DB responded with error): ' + msg);
                   return;
 
@@ -137,8 +127,7 @@ jobs:
                 }
               }
 
-              // 循环走完都没 return，说明所有表都不存在
-              console.error('❌ Scan failed! None of the 20 common tables exist.');
+              console.error('❌ Scan failed! None of the targets worked.');
               process.exit(1);
             }
 
