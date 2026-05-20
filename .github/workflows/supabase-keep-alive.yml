@@ -3,7 +3,7 @@ name: Supabase Keep-Alive (Smart Scan)
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 2 */2 * *'
+    - cron: '0 2 */1 * *'
 
 jobs:
   keep-alive:
