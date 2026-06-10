@@ -12,12 +12,6 @@ jobs:
       fail-fast: false
       matrix:
         project: ['PROJ1', 'PROJ2', 'PROJ3', 'PROJ4']
-        # ⚠️ 关键点：请确保这里的 'PROJ1', 'PROJ2' 等名字
-        # 和你 GitHub Secrets 名称的后缀（如 SUPABASE_URL_PROJ1）完全一致！
-        #PROJ1：n8npro-4755
-        #PROJ2：n8-1512
-        #PROJ3：umi-1512
-        #PROJ4：@proton.me
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -37,7 +31,7 @@ jobs:
         run: |
           node -e "
             const { createClient } = require('@supabase/supabase-js');
-            
+
             const supabaseUrl = (process.env.SUPABASE_URL || '').trim();
             const supabaseKey = (process.env.SUPABASE_KEY || '').trim();
 
@@ -76,75 +70,89 @@ jobs:
               { type: 'storage', name: 'buckets' }
             ];
 
+            async function queryTarget(target) {
+              try {
+                let result;
+                if (target.type === 'storage') {
+                  result = await supabase.storage.listBuckets();
+                } else {
+                  result = await supabase.from(target.name).select('id').limit(1);
+                }
+                const error = result.error;
+                if (!error) return { ok: true, status: 'OK', detail: '' };
+
+                const msg = error.message.toLowerCase();
+                if (msg.includes('permission denied') || msg.includes('policy')) {
+                  return { ok: true, status: 'OK (Access Denied)', detail: error.message };
+                }
+                if (msg.includes('does not exist') || msg.includes('404') || msg.includes('schema cache') || msg.includes('not found')) {
+                  return { ok: false, status: 'NOT FOUND', detail: error.message };
+                }
+                if (msg.includes('fetch failed') || msg.includes('connection refused') || msg.includes('network')) {
+                  return { ok: false, status: 'NETWORK ERROR', detail: error.message };
+                }
+                return { ok: true, status: 'OK (DB Responded)', detail: error.message };
+              } catch (err) {
+                return { ok: false, status: 'CRITICAL', detail: err.message };
+              }
+            }
+
             async function scanAll() {
               console.log('📡 Connecting to:', supabaseUrl);
-              console.log('🔍 Scanning all targets...\\n');
+              console.log('🔍 Phase 1: Scanning all targets...\n');
 
-              let successCount = 0;
-              let failCount = 0;
               const results = [];
+              const successTargets = [];
 
               for (const target of candidates) {
-                let status = '❌ FAIL';
-                let detail = '';
+                const res = await queryTarget(target);
+                results.push({ ...target, ...res });
 
-                try {
-                  let result;
+                const icon = res.ok ? '✅' : res.status === 'NOT FOUND' ? '⚠️' : '❌';
+                console.log(icon + ' [' + target.type.toUpperCase().padEnd(7) + '] ' + target.name.padEnd(20) + ' → ' + res.status + (res.detail ? ' | ' + res.detail : ''));
 
-                  if (target.type === 'storage') {
-                    result = await supabase.storage.listBuckets();
-                  } else {
-                    result = await supabase.from(target.name).select('id').limit(1);
-                  }
-
-                  const error = result.error;
-
-                  if (!error) {
-                    status = '✅ OK';
-                    successCount++;
-                  } else {
-                    const msg = error.message.toLowerCase();
-                    detail = error.message;
-
-                    if (msg.includes('permission denied') || msg.includes('policy')) {
-                      status = '✅ OK (Access Denied)';
-                      successCount++;
-                    } else if (msg.includes('does not exist') || msg.includes('404') || msg.includes('schema cache') || msg.includes('not found')) {
-                      status = '⚠️ NOT FOUND';
-                      failCount++;
-                    } else if (msg.includes('fetch failed') || msg.includes('connection refused') || msg.includes('network')) {
-                      status = '❌ NETWORK ERROR';
-                      failCount++;
-                    } else {
-                      status = '✅ OK (DB Responded)';
-                      successCount++;
-                    }
-                  }
-                } catch (err) {
-                  status = '❌ CRITICAL';
-                  detail = err.message;
-                  failCount++;
+                if (res.ok) {
+                  successTargets.push(target);
                 }
-
-                const icon = status.startsWith('✅') ? '✅' : status.startsWith('⚠️') ? '⚠️' : '❌';
-                const cleanStatus = status.replace(/^[✅⚠️❌]\s*/, '');
-                console.log(\`\${icon} [\${target.type.toUpperCase().padEnd(7)}] \${target.name.padEnd(20)} → \${cleanStatus}\${detail ? ' | ' + detail : ''}\`);
-                
-                results.push({ target: target.name, type: target.type, status: cleanStatus, detail });
               }
 
-              console.log('\\n' + '─'.repeat(50));
-              console.log(\`📊 Summary: \${successCount} success, \${failCount} failed, \${candidates.length} total\`);
-              console.log('─'.repeat(50));
+              console.log('\n' + '─'.repeat(60));
+              console.log('📊 Phase 1 Summary: ' + successTargets.length + ' success, ' + (candidates.length - successTargets.length) + ' failed, ' + candidates.length + ' total');
+              console.log('─'.repeat(60));
 
-              // 只要 live 表查询成功，就算保活成功
-              const liveResult = results.find(r => r.target === 'live');
-              if (liveResult && liveResult.status.startsWith('OK')) {
-                console.log('🛡️ Keep-alive confirmed: live table is accessible.');
-              } else if (successCount > 0) {
-                console.log('🛡️ Keep-alive confirmed: at least one target responded.');
+              // Phase 2: 对成功的表再读取20遍
+              if (successTargets.length > 0) {
+                console.log('\n🔁 Phase 2: Re-querying ' + successTargets.length + ' successful target(s) 20 times each...\n');
+
+                for (const target of successTargets) {
+                  console.log('  📌 Target: [' + target.type + '] ' + target.name);
+                  let targetSuccess = 0;
+                  let targetFail = 0;
+
+                  for (let i = 1; i <= 20; i++) {
+                    const res = await queryTarget(target);
+                    if (res.ok) {
+                      targetSuccess++;
+                      process.stdout.write('.');
+                    } else {
+                      targetFail++;
+                      process.stdout.write('x');
+                    }
+                  }
+                  console.log('  → ' + targetSuccess + '/20 OK, ' + targetFail + '/20 FAIL');
+                }
+
+                console.log('\n✅ Phase 2 complete. All successful targets queried 20 additional times.');
+              }
+
+              // 最终判断
+              const liveResult = results.find(r => r.name === 'live');
+              if (liveResult && liveResult.ok) {
+                console.log('\n🛡️ Keep-alive confirmed: live table is accessible.');
+              } else if (successTargets.length > 0) {
+                console.log('\n🛡️ Keep-alive confirmed: ' + successTargets.length + ' target(s) responded.');
               } else {
-                console.error('❌ Keep-alive failed! No targets responded.');
+                console.error('\n❌ Keep-alive failed! No targets responded.');
                 process.exit(1);
               }
             }
