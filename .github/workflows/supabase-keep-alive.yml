@@ -3,7 +3,7 @@ name: Supabase Keep-Alive (Smart Scan)
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 2 */1 * *'  # 每天凌晨2点运行
+    - cron: '0 2 */1 * *'
 
 jobs:
   keep-alive:
@@ -45,19 +45,8 @@ jobs:
               db: { schema: 'public' }
             });
 
-            // 🎯 核心修改：优先查询系统表（100%存在且100%命中数据库）
-            // 这些查询一定会被 PostgreSQL 执行，无论你的 public schema 是否为空
             const candidates = [
-              // 1️⃣ 系统表查询（最可靠，任何 Postgres 都有）
-              { type: 'rpc', name: 'pg_tables', query: () => supabase.rpc('pg_tables') },
-              { type: 'table', name: 'pg_catalog.pg_tables', query: () => supabase.from('pg_tables').select('tablename').limit(1) },
-              { type: 'table', name: 'information_schema.tables', query: () => supabase.from('information_schema_tables').select('table_name').limit(1) },
-              
-              // 2️⃣ 通过 PostgREST 内置端点查询（直接命中数据库）
-              { type: 'rpc', name: 'health_check', query: () => supabase.rpc('health_check') },
-              
-              // 3️⃣ 业务表（如果存在的话）
-              { type: 'table', name: 'live' },  // 🎯 优先查保活表
+              { type: 'table', name: 'live' },
               { type: 'table', name: 'users' },
               { type: 'table', name: 'profiles' },
               { type: 'table', name: 'todos' },
@@ -78,23 +67,25 @@ jobs:
               { type: 'table', name: 'teams' },
               { type: 'table', name: 'articles' },
               { type: 'table', name: 'audit_logs' },
-              
-              // 4️⃣ Storage 保底（但可能不触发数据库查询）
               { type: 'storage', name: 'buckets' }
             ];
 
-            async function scanAndWake() {
+            async function scanAll() {
               console.log('📡 Connecting to:', supabaseUrl);
-              console.log('🔍 Starting scan...');
+              console.log('🔍 Scanning all targets...\\n');
+
+              let successCount = 0;
+              let failCount = 0;
+              const results = [];
 
               for (const target of candidates) {
+                let status = '❌ FAIL';
+                let detail = '';
+
                 try {
                   let result;
-                  
-                  // 如果定义了自定义查询函数，使用它
-                  if (target.query) {
-                    result = await target.query();
-                  } else if (target.type === 'storage') {
+
+                  if (target.type === 'storage') {
                     result = await supabase.storage.listBuckets();
                   } else {
                     result = await supabase.from(target.name).select('id').limit(1);
@@ -102,44 +93,55 @@ jobs:
 
                   const error = result.error;
 
-                  // 1. 成功 (无错误) -> 绝对有效的活跃
                   if (!error) {
-                    console.log('✅ Alive! Query successful on: [' + target.type + '] ' + target.name);
-                    return; 
+                    status = '✅ OK';
+                    successCount++;
+                  } else {
+                    const msg = error.message.toLowerCase();
+                    detail = error.message;
+
+                    if (msg.includes('permission denied') || msg.includes('policy')) {
+                      status = '✅ OK (Access Denied)';
+                      successCount++;
+                    } else if (msg.includes('does not exist') || msg.includes('404') || msg.includes('schema cache') || msg.includes('not found')) {
+                      status = '⚠️ NOT FOUND';
+                      failCount++;
+                    } else if (msg.includes('fetch failed') || msg.includes('connection refused') || msg.includes('network')) {
+                      status = '❌ NETWORK ERROR';
+                      failCount++;
+                    } else {
+                      status = '✅ OK (DB Responded)';
+                      successCount++;
+                    }
                   }
-
-                  const msg = error.message.toLowerCase();
-
-                  // 2. 权限不足 -> 也是绝对有效的活跃（说明表存在且DB查了权限）
-                  if (msg.includes('permission denied') || msg.includes('policy')) {
-                    console.log('✅ Alive! (Access Denied confirms DB is up): ' + target.name);
-                    return; 
-                  }
-
-                  // 3. 函数/表不存在 -> 继续尝试下一个
-                  if (msg.includes('does not exist') || msg.includes('404') || msg.includes('schema cache') || msg.includes('not found')) {
-                    console.log('⚠️ Target not found: ' + target.name + ' -> trying next...');
-                    continue; 
-                  }
-
-                  // 4. 网络错误 -> 报错退出
-                  if (msg.includes('fetch failed') || msg.includes('connection refused') || msg.includes('network')) {
-                    throw new Error('FATAL: Connection failed. ' + msg);
-                  }
-
-                  // 5. 其他错误（如语法错误等）-> 数据库确实响应了，也算活跃
-                  console.log('✅ Alive! (DB responded with error): ' + msg);
-                  return;
-
                 } catch (err) {
-                  console.error('❌ Critical Error:', err.message);
-                  process.exit(1);
+                  status = '❌ CRITICAL';
+                  detail = err.message;
+                  failCount++;
                 }
+
+                const icon = status.startsWith('✅') ? '✅' : status.startsWith('⚠️') ? '⚠️' : '❌';
+                const cleanStatus = status.replace(/^[✅⚠️❌]\s*/, '');
+                console.log(\`\${icon} [\${target.type.toUpperCase().padEnd(7)}] \${target.name.padEnd(20)} → \${cleanStatus}\${detail ? ' | ' + detail : ''}\`);
+                
+                results.push({ target: target.name, type: target.type, status: cleanStatus, detail });
               }
 
-              console.error('❌ Scan failed! None of the targets worked.');
-              process.exit(1);
+              console.log('\\n' + '─'.repeat(50));
+              console.log(\`📊 Summary: \${successCount} success, \${failCount} failed, \${candidates.length} total\`);
+              console.log('─'.repeat(50));
+
+              // 只要 live 表查询成功，就算保活成功
+              const liveResult = results.find(r => r.target === 'live');
+              if (liveResult && liveResult.status.startsWith('OK')) {
+                console.log('🛡️ Keep-alive confirmed: live table is accessible.');
+              } else if (successCount > 0) {
+                console.log('🛡️ Keep-alive confirmed: at least one target responded.');
+              } else {
+                console.error('❌ Keep-alive failed! No targets responded.');
+                process.exit(1);
+              }
             }
 
-            scanAndWake();
+            scanAll();
           "
