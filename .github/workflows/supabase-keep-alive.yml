@@ -57,6 +57,7 @@ jobs:
               { type: 'rpc', name: 'health_check', query: () => supabase.rpc('health_check') },
               
               // 3️⃣ 业务表（如果存在的话）
+              { type: 'table', name: 'live' },  // 🎯 优先查保活表
               { type: 'table', name: 'users' },
               { type: 'table', name: 'profiles' },
               { type: 'table', name: 'todos' },
